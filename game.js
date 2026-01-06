@@ -55,12 +55,13 @@ const state = {
 };
 const SFX = {
   start: new Audio(),
-  flap: new Audio(),
+  flap: [new Audio(), new Audio(), new Audio()],
   score: new Audio(),
   hit: new Audio(),
   die: new Audio(),
   played: false,
 };
+let flapSoundIndex = 0;
 const gnd = {
   sprite: new Image(),
   x: 0,
@@ -87,7 +88,7 @@ const bg = {
 const pipe = {
   top: { sprite: new Image() },
   bot: { sprite: new Image() },
-  gap: 85,
+  gap: 100,
   moved: true,
   pipes: [],
   draw: function () {
@@ -119,12 +120,15 @@ const pipe = {
     }
   },
 };
+// 1. Define a scale factor.
+// Since 200px is huge, 0.25 makes it 50px (reasonable size).
+const BIRD_SCALE = 0.20;
+
 const bird = {
   animations: [
-    { sprite: new Image() },
-    { sprite: new Image() },
-    { sprite: new Image() },
-    { sprite: new Image() },
+    { sprite: new Image() }, // b0 (Idle/Fall)
+    { sprite: new Image() }, // b1 (Flap/Up)
+    { sprite: new Image() }, // b2 (Dead)
   ],
   rotatation: 0,
   x: 50,
@@ -136,32 +140,54 @@ const bird = {
   draw: function () {
     let h = this.animations[this.frame].sprite.height;
     let w = this.animations[this.frame].sprite.width;
+    
     sctx.save();
     sctx.translate(this.x, this.y);
     sctx.rotate(this.rotatation * RAD);
+    
+    // Apply the scale here
+    sctx.scale(BIRD_SCALE, BIRD_SCALE);
+    
+    // Draw centered based on original dimensions (scale handles the rest)
     sctx.drawImage(this.animations[this.frame].sprite, -w / 2, -h / 2);
+    
     sctx.restore();
   },
   update: function () {
-    let r = parseFloat(this.animations[0].sprite.width) / 2;
+    // FIX: Calculate radius based on the SCALED size
+    // We use the first image as reference.
+    // width * scale / 2 gives us the radius of the scaled bird.
+    let r = (parseFloat(this.animations[0].sprite.width) * BIRD_SCALE) / 2;
+    
     switch (state.curr) {
       case state.getReady:
         this.rotatation = 0;
         this.y += frames % 10 == 0 ? Math.sin(frames * RAD) : 0;
-        this.frame += frames % 10 == 0 ? 1 : 0;
+        this.frame = 0; // Always use Image 0 (Idle) in Get Ready
         break;
+        
       case state.Play:
-        this.frame += frames % 5 == 0 ? 1 : 0;
         this.y += this.speed;
         this.setRotation();
         this.speed += this.gravity;
+        
+        // ANIMATION LOGIC:
+        // If speed is negative (moving up), use Frame 1 (Flap/b1)
+        // Otherwise use Frame 0 (Idle/b0)
+        if (this.speed < 0) {
+            this.frame = 1;
+        } else {
+            this.frame = 0;
+        }
+
         if (this.y + r >= gnd.y || this.collisioned()) {
           state.curr = state.gameOver;
         }
-
         break;
+        
       case state.gameOver:
-        this.frame = 1;
+        this.frame = 2; // Always use Image 2 (Dead/b2) in Game Over
+        
         if (this.y + r < gnd.y) {
           this.y += this.speed;
           this.setRotation();
@@ -175,14 +201,14 @@ const bird = {
             SFX.played = true;
           }
         }
-
         break;
     }
-    this.frame = this.frame % this.animations.length;
   },
   flap: function () {
     if (this.y > 0) {
-      SFX.flap.play();
+      const currentFlapSound = SFX.flap[flapSoundIndex];
+      currentFlapSound.play();
+      flapSoundIndex = (flapSoundIndex + 1) % SFX.flap.length;
       this.speed = -this.thrust;
     }
   },
@@ -195,13 +221,20 @@ const bird = {
   },
   collisioned: function () {
     if (!pipe.pipes.length) return;
-    let bird = this.animations[0].sprite;
+    
+    // FIX: Update collision logic to match the visual scale
     let x = pipe.pipes[0].x;
     let y = pipe.pipes[0].y;
-    let r = bird.height / 4 + bird.width / 4;
+    
+    // Calculate radius based on SCALED image
+    let birdW = this.animations[0].sprite.width * BIRD_SCALE;
+    let birdH = this.animations[0].sprite.height * BIRD_SCALE;
+    let r = birdW / 4 + birdH / 4; // Average radius approximation
+
     let roof = y + parseFloat(pipe.top.sprite.height);
     let floor = roof + pipe.gap;
     let w = parseFloat(pipe.top.sprite.width);
+    
     if (this.x + r >= x) {
       if (this.x + r < x + w) {
         if (this.y - r <= roof || this.y + r >= floor) {
@@ -216,6 +249,12 @@ const bird = {
     }
   },
 };
+
+// Make sure to update your image sources at the bottom of your file
+// Assuming your files are named b0, b1, b2
+bird.animations[0].sprite.src = "img/bird/b0.png"; // Idle
+bird.animations[1].sprite.src = "img/bird/b1.png"; // Flap
+bird.animations[2].sprite.src = "img/bird/b2.png"; // Dead
 const UI = {
   getReady: { sprite: new Image() },
   gameOver: { sprite: new Image() },
@@ -300,12 +339,13 @@ UI.gameOver.sprite.src = "img/go.png";
 UI.getReady.sprite.src = "img/getready.png";
 UI.tap[0].sprite.src = "img/tap/t0.png";
 UI.tap[1].sprite.src = "img/tap/t1.png";
-bird.animations[0].sprite.src = "img/bird/b0.png";
-bird.animations[1].sprite.src = "img/bird/b1.png";
-bird.animations[2].sprite.src = "img/bird/b2.png";
-bird.animations[3].sprite.src = "img/bird/b0.png";
+bird.animations[0].sprite.src = "img/bird/s0.png"; // Idle
+bird.animations[1].sprite.src = "img/bird/s1.png"; // Flap
+bird.animations[2].sprite.src = "img/bird/s2.png"; // Dead
 SFX.start.src = "sfx/start.wav";
-SFX.flap.src = "sfx/flap.wav";
+SFX.flap[0].src = "sfx/flap.wav";
+SFX.flap[1].src = "sfx/flap2.wav";
+SFX.flap[2].src = "sfx/flap3.wav";
 SFX.score.src = "sfx/score.wav";
 SFX.hit.src = "sfx/hit.wav";
 SFX.die.src = "sfx/die.wav";
